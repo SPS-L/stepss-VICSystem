@@ -1,0 +1,14 @@
+# Solver settings for the Victorian transmission system
+# (see https://stepss.sps-lab.org/user-guide/solver-settings/)
+$OMEGA_REF COI                     ;
+$SCHEME DE                         ;
+$NEWTON_TOLER 0.0001 0.0001 0.0001 ;
+$FIN_DIFFER 0.00001 0.00001        ;
+$PLOT_STEP 0.01                    ;
+$NB_THREADS 1                      ;
+$SKIP_CONV F                       ;
+$FULL_UPDATE T                     ;
+$DISP_PROF F                       ;
+# Optional monitors that stop a run once the system has clearly collapsed:
+#DCTL SIM_MINMAXVOLT Voltages 0.6 1.4 2 0 ;
+#DCTL SIM_MINMAXSPEED Speeds  0.9 1.1 2 0 ;

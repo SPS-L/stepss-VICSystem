@@ -1,0 +1,28 @@
+# Simulation outputs
+*.trj
+*.trace
+*.cur
+*.cont
+*.disc
+
+# Figures written by TNSingleSim.py
+/Generators.png
+/Reserve.png
+/WindFarms.png
+
+# Intermediate files of the operating-point generator
+GenerateOPs/LFData/
+GenerateOPs/ArtereData.txt
+GenerateOPs/LF.txt
+
+# A personal RAMSES licence record must never be committed
+license.dat
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Claude runtime files and MCP configuration
+/.claude/
+.mcp.json

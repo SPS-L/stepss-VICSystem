@@ -3,15 +3,16 @@
 @author: vorwerkj
 """
 
-import pyramses
+import stepss
 import numpy as np
 import pandas as pd
 import os
 import matplotlib.pyplot as plt
-import seaborn as sns
 
 # time step of the fault
 t_step = 0.5
+# generator lost at t_step
+tripped_gen = 'SM35G1'
 # simulation horizon
 Thorizon = 20
 # Select if you would like to store the plotted results
@@ -21,11 +22,13 @@ plot_PVs = False     # if true. store PV plots
 plot_V = False    # if true store bus voltage plots
 
 
-#% Load license file, if you have your own 
-# ram = pyramses.sim(r"...\Release_intel_w64")
+# The engine ships inside the stepss package. This network has 125 buses, so
+# no licence is needed.
+ram = stepss.sim()
+cm = 1/2.54   # figure sizes below are given in cm
 
 # configure the simulation
-case = pyramses.cfg("cmd.txt")
+case = stepss.cfg("cmd.txt")
 
 # store results
 case.addTrj("out.trj")
@@ -38,7 +41,7 @@ ram.execSim(case,0)
 #ram.addDisturb(t_step, 'CHGPRM INJ L0 P0 -500 0.1')
 
 # Loose one generator, producing 500 MW
-ram.addDisturb(t_step, 'BREAKER SYNC_MACH SM35G1 0')
+ram.addDisturb(t_step, 'BREAKER SYNC_MACH ' + tripped_gen + ' 0')
 
 # Fault Bus
 #ram.addDisturb(t_step, 'FAULT BUS 193 0 5')
@@ -53,7 +56,7 @@ except:
     
 
 #%% Overview plots
-ext = pyramses.extractor(case.getTrj())
+ext = stepss.extractor(case.getTrj())
 
 
 #%% Generators
@@ -157,9 +160,12 @@ print('KE supplied by interconnectors: \n' + str(H_con))
 dP = td_gen['dP'][t_step:tH].iloc[-1]
 df = td_gen['w'][t_step:tH].iloc[-1]-50
 H_gen = 0.5*dP/df
+# the tripped unit no longer supplies anything, and its own speed change
+# would swamp the sum
+H_gen = H_gen.drop(tripped_gen, errors='ignore')
 print('KE supplied by generators: \n' + str(H_gen))
 
-print('\nTotal KE from \ninterconenctors: '+str(H_con.sum())+'MWs\ngenerators: '+str(H_gen.sum())+'MWs')
+print('\nTotal KE from \ninterconnectors: '+str(H_con.sum())+'MWs\ngenerators: '+str(H_gen.sum())+'MWs')
 
 #%% Voltages
 

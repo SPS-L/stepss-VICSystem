@@ -3,7 +3,12 @@
 @author: vorwerkj
 """
 
+import os
 import pandas as pd
+
+# The case files live one folder up, where cmd.txt and VICSystem.cfg read them.
+# Running this script replaces the shipped operating point with the selected one.
+out_dir = '..'
 
 # select LF solution file
 time = 24   # available times: 48 times a day
@@ -35,20 +40,20 @@ filedata = trfo + branch + lflow
 
 #%% convert data required later to data frames
 data = bus
-bus = pd.DataFrame([x.split(' ') for x in data.split('\n')], 
+bus = pd.DataFrame([x.split(' ') for x in data.split('\n') if x.strip()], 
                   columns = ['type', 'bus', 'vnom', 'p', 'q', 'bshunt', 'qshunt', 'end']
                   ).drop('end', axis = 1)
 bus.index = bus['bus']
 
 data = gens
-gens = pd.DataFrame([x.split(' ') for x in data.split('\n')], 
+gens = pd.DataFrame([x.split(' ') for x in data.split('\n') if x.strip()], 
                   columns = ['type', 'name', 'bus', 'mbus', 'p', 'q', 'vimp','snom',
                              'qmin','qmax','br','end']
                   ).drop('end', axis = 1)
 gens.index = gens['bus']
 
 data = svc
-svc = pd.DataFrame([x.split(' ') for x in data.split('\n')], 
+svc = pd.DataFrame([x.split(' ') for x in data.split('\n') if x.strip()], 
                   columns = ['type', 'name', 'bus', 'mbus', 'v0', 'q', 'snom','bmax',
                              'bmin','g','br','end']
                   ).drop('end', axis = 1)
@@ -113,7 +118,7 @@ svc['type'] = 'INJEC LOAD'
 
 # add to file
 filedata = bus.to_string(header = False, index = False) +'\n\n' + loads.to_string(header = False, index = False)+'\n\n' + svc.to_string(header = False, index = False)+'\n\n' + trfo + branch + lflow
-with open('pyRamses/pyRdat_ss.dat', 'w') as file:
+with open(os.path.join(out_dir, 'pyRdat_ss.dat'), 'w') as file:
     file.write(filedata)
     
 #%% read dynamic data
@@ -157,7 +162,9 @@ sm.loc['SM35G2','Q'] = sm.loc['SM35G2','Q']*3/4
 
 if sm.loc['SM35G2','P']<10: print('Too little generation at bus 35G.')
 
-gendata = '$TOLAC 0.01 ; \n$TOLREAC 0.01 ;\n$NBITMA 50 ;\n$MISBLOC 0 ;\n$MISADJ 1 ;\n$PLIM 1 ;\n$DIVDET 0 ;\nSLACK 681; \nFNOM 50. ;\n\nINJEC PQ L0 682 0 0 0 0 0.01;\n\n\n\n'
+# The power-flow settings ($TOLAC, $NBITMA, ...) belong in ArtereData.txt only;
+# RAMSES does not know them and warns about each one.
+gendata = 'SLACK 681; \nFNOM 50. ;\n\nINJEC PQ L0 682 0 0 0 0 0.01;\n\n\n\n'
 
 for row in sm.index:
     # add generator data to string
@@ -232,7 +239,7 @@ if wind.empty: print('No wind generators active.')
 else: gendata = gendata + wind.to_string(header = False, index = False)+'\n\n'
 
 
-with open('pyRamses/pyRdat_dyn.dat', 'w') as file:
+with open(os.path.join(out_dir, 'pyRdat_dyn.dat'), 'w') as file:
     file.write(gendata)
     
     #%% Total load and generation after distribution

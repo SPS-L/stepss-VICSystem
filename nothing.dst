@@ -1,0 +1,6 @@
+  0.000 CONTINUE SOLVER BD 0.02 0.001 0. ALL
+# Add events here, or from Python with sim.addDisturb(); for example:
+#  0.500 BREAKER SYNC_MACH SM35G1 0
+#  0.500 FAULT BUS 193 0. 5.
+#  0.550 CLEAR BUS 193
+ 20.000 STOP

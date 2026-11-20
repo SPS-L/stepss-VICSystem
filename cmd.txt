@@ -3,7 +3,7 @@ pyRdat_dyn.dat
 SOLVEROPTIONS.dat
 
 init.trace
-nothing.dst 
+nothing.dst
 obs.trj
 obs.dat
 cont.trace

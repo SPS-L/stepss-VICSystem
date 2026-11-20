@@ -1,0 +1,4 @@
+  0.000 CONTINUE SOLVER BD 0.02 0.001 0. ALL
+# Loss of SM35G1, one of two units at bus 35G, producing 500 MW
+  0.500 BREAKER SYNC_MACH SM35G1 0
+ 20.000 STOP

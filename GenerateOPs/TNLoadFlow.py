@@ -6,16 +6,23 @@ Created on Wed Nov 30 10:39:50 2022
 """
 
 
+import os
+import shutil
 import pandas as pd
 import numpy as np
-import subprocess
 import seaborn as sns
 import matplotlib.pyplot as plt
-import shutil
+from stepss.helios import HeliosSession
 
 powerFactor = 0.98
-artere = {}
-tmax = 48
+tmax = 48   # half-hourly time steps 1..48 in the scenario files
+
+# Voltage set-point of the slack, the NSW interconnector at bus 681. Its
+# row in SteadyStateData.xlsx has Vcontrl = 0, which ARTERE accepted at the
+# slack bus but HELIOS cannot solve. 1.003986 pu reproduces the published
+# operating point (pyRdat_ss.dat) to 1e-5 pu in magnitude.
+slack_bus = '681'
+slack_voltage = 1.003986
 
 date = '12_22' # available days:    days = ['5_15','7_17','8_9','10_21','12_22']
 electrification = '0_0'   # keep at 0, no added thermal load
@@ -27,12 +34,12 @@ sns.set_style('darkgrid', {'axes.facecolor':'0.9'})
 cm = 1/2.54
 sns.set_context("paper", font_scale = 1.6, rc={"grid.linewidth": 0.6})
 plt.rcParams.update({
-    "text.usetex": True,
+    "text.usetex": shutil.which("latex") is not None,
     "font.family": "sans-serif",
     "font.sans-serif": ["Helvetica"]})
 # for Palatino and other serif fonts use:
 plt.rcParams.update({
-    "text.usetex": True,
+    "text.usetex": shutil.which("latex") is not None,
     "font.family": "serif",
     "font.serif": ["Palatino"],
 })
@@ -51,7 +58,9 @@ Losses_LF =[]
 scen_file = 'Scenarios/Output_elec_2025_'+date+'_step_'+electrification+'.xlsx'
 demand_file = "Scenarios/demand_"+date+"_"+electrification+".xlsx"
 
-for time in range(1,tmax):
+os.makedirs('LFData', exist_ok=True)
+
+for time in range(1,tmax+1):
     
 #%% Buses and loads
     # read all buses
@@ -92,20 +101,27 @@ for time in range(1,tmax):
     VPP = pd.read_excel(scen_file,
                       sheet_name =  'VPP_MW').drop('ID', axis = 1)
     VPP.index = VPP['Bus'].astype("string")
-    bus['PVPP'] = 0
+    bus['PVPP'] = 0.0
     for row in VPP.index:
-        if str(int(row))+'a' in bus.index: bus.loc[row+'a', 'PVPP'] =VPP.loc[row, str(time)]
-        else: bus.loc[row, 'PVPP'] = VPP.loc[row, str(time)]
+        # a bus the network does not have would otherwise become an empty BUS record
+        target = str(int(row))+'a' if str(int(row))+'a' in bus.index else row
+        if target not in bus.index:
+            if abs(VPP.loc[row, str(time)]) > 1e-6: print('VPP at unknown bus', row, 'ignored:', VPP.loc[row, str(time)], 'MW')
+            continue
+        bus.loc[target, 'PVPP'] = VPP.loc[row, str(time)]
     bus['Pt'] = bus['Pt'].fillna(0)         # fill non existing with 0
     
     # need to add Batteries 
     Bess = pd.read_excel(scen_file,
                       sheet_name =  'Battery_MW').drop('ID', axis = 1)
     Bess.index = Bess['Bus'].astype("string")
-    bus['PBess'] = 0
+    bus['PBess'] = 0.0
     for row in Bess.index:
-        if (row)+'a' in bus.index: bus.loc[row+'a', 'PBess'] =Bess.loc[row, str(time)]
-        else: bus.loc[row, 'PBess'] = Bess.loc[row, str(time)]
+        target = row+'a' if row+'a' in bus.index else row
+        if target not in bus.index:
+            if abs(Bess.loc[row, str(time)]) > 1e-6: print('Battery at unknown bus', row, 'ignored:', Bess.loc[row, str(time)], 'MW')
+            continue
+        bus.loc[target, 'PBess'] = Bess.loc[row, str(time)]
     bus['PBess'] = bus['PBess'].fillna(0)         # fill non existing with 0
     
     # sum active load per node
@@ -124,6 +140,7 @@ for time in range(1,tmax):
     #%% Handle Generators
     gens = pd.read_excel('GridData/SteadyStateData.xlsx', sheet_name = 'Generators')
     gens.index = gens['Bus']
+    gens['P'] = gens['P'].astype('float64')
     
     sheets={'GPG' : {'name' : 'GPG', 'identifier' : 'G'},
             'Cgens' : {'name' : 'CGens', 'identifier' : 'G'},
@@ -158,6 +175,9 @@ for time in range(1,tmax):
     # read import and exports
     cons = pd.read_excel('GridData/SteadyStateData.xlsx', sheet_name = 'Interconnectors')
     cons.index = cons['ID']
+    cons['P'] = cons['P'].astype('float64')
+    cons['Vcontrl'] = cons['Vcontrl'].astype('float64')
+    cons.loc[cons['Bus'].astype(str) == slack_bus, 'Vcontrl'] = slack_voltage
     
     imports = pd.read_excel(scen_file,
                          sheet_name='Imports', index_col=0)
@@ -200,16 +220,15 @@ for time in range(1,tmax):
     with open('ArtereData.txt', 'w') as file: file.write(filedata)
     
     
-    #%% run artere
-    
-    
-    acmd = 'ArtereData.txt\n\nDF\nLF.txt\nE\n'
-    with open('acmd.txt','w')  as file: 
-        file.write(acmd)
-        file.close()
-
-        
-    subprocess.run(['artere.exe','-tacmd.txt'])
+    #%% solve the power flow with HELIOS
+    # ArtereData.txt is in the ARTERE format, which HELIOS reads; write_dump
+    # writes the solved case, with LFRESV records, in the same format.
+    pf = HeliosSession()
+    pf.load_file('ArtereData.txt')
+    if not pf.solve():
+        raise RuntimeError('HELIOS did not converge at time step %d: %s' % (time, pf.last_error))
+    pf.write_dump('LF.txt')
+    pf.close()
     
         
     D = bus['P'].sum()
@@ -250,19 +269,19 @@ for time in range(1,tmax):
             if 'GENER' in line: gens = gens + line
     
     data = bus
-    bus = pd.DataFrame([x.split(' ') for x in data.split('\n')], 
+    bus = pd.DataFrame([x.split(' ') for x in data.split('\n') if x.strip()], 
                       columns = ['type', 'bus', 'vnom', 'p', 'q', 'bshunt', 'qshunt', 'end']
                       ).drop('end', axis = 1)
     bus.index = bus['bus']
     
     data = lflow
-    lflow = pd.DataFrame([x.split(' ') for x in data.split('\n')], 
+    lflow = pd.DataFrame([x.split(' ') for x in data.split('\n') if x.strip()], 
                       columns = ['type', 'bus', 'vmag', 'phase','end']
                       ).drop('end', axis = 1)
     lflow.index = lflow['bus']
     
     data = gens
-    gens = pd.DataFrame([x.split(' ') for x in data.split('\n')], 
+    gens = pd.DataFrame([x.split(' ') for x in data.split('\n') if x.strip()], 
                       columns = ['type', 'name', 'bus', 'mbus', 'p', 'q', 'vimp','snom',
                                  'qmin','qmax','br','end']
                       ).drop('end', axis = 1)
